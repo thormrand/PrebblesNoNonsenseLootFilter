@@ -1,0 +1,17 @@
+## Interface: 30300
+## Title: Prebbles_NNS_InvMngmt
+## Notes: Inventory management and automated selling via custom filters.
+## Author: Prebble
+## Version: 0.1b
+## SavedVariablesPerCharacter: PNNSIM_ConsoleConfig PNNSIM_CharData
+## SavedVariables: PNNSIM_Profiles
+
+core.lua
+console.lua
+tools_settings.lua
+tools_commands.lua
+tools_trackers.lua
+tools_minimaprefresh.lua
+tools_zonemonitor.lua
+tooltip_module.lua
+tools_bagspace.lua

@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: Prebbles NNS Simple Mailer
+## Notes: Batch mail items to a recipient from a dedicated mailbox tab.
+## Author: Prebble
+## Version: 0.1b
+## RequiredDeps: Prebbles_NNS_InvMngmt
+## SavedVariables: PNNSIM_SimpleMailerData
+
+simple_mailer.lua
