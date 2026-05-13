@@ -368,7 +368,9 @@ mainFrame:SetScript("OnUpdate", function(self, elapsed)
             local _, looterActive = FindCompanion(GetLooterName())
             local _, vendorActive = FindCompanion(GetVendorName())
             if looterActive or vendorActive then
-                DismissVM()
+                After(1.0, function()
+                    if IsPlayerMountedOrFlying() then DismissVM() end
+                end)
             end
         else
             if currentState == S_LOOTING then
