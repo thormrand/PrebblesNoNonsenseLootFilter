@@ -374,7 +374,8 @@ mainFrame:SetScript("OnUpdate", function(self, elapsed)
             end
         else
             if currentState == S_LOOTING then
-                After(1.5, function()
+                After(3.0, function()
+                    if IsPlayerMountedOrFlying() then return end
                     if currentState == S_LOOTING then
                         local _, looterActive = FindCompanion(GetLooterName())
                         if not looterActive then SummonVM(GetLooterName()) end
@@ -382,7 +383,8 @@ mainFrame:SetScript("OnUpdate", function(self, elapsed)
                 end)
             elseif currentState == S_SELLING then
                 waitingForMerchant = true
-                After(1.5, function()
+                After(3.0, function()
+                    if IsPlayerMountedOrFlying() then return end
                     if currentState == S_SELLING then
                         local _, vendorActive = FindCompanion(GetVendorName())
                         if not vendorActive then SummonVM(GetVendorName()) end
