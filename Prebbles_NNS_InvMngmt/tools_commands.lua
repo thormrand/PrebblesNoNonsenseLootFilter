@@ -213,63 +213,82 @@ function PNNSIM_ProcessCommand(PNNSIM_msg, PNNSIM_isConsole)
     end
 
     if string.match(PNNSIM_cmd_lower, "^help") then
+        local helpLines = {
+            "console.activeprofile [profilename|void]",
+            "console.autosell [0/1]",
+            "console.autosell.batchsize [N]",
+            "console.defaultprofile [profilename|void]",
+            "console.delnovalue [0/1]",
+            "console.graydelete [0/1]",
+            "console.help",
+            "console.permclear",
+            "console.save",
+            "console.show",
+            "console.tracker.genesis.gold.reset",
+            "console.tracker.genesis.item.reset",
+            "console.tracker.session.gold.reset",
+            "console.tracker.session.item.reset",
+            "console.tracker.show",
+            "console.verbose [0/1]",
+            "tool.bagspace [0/1]",
+            "tool.farminvite [0/1]",
+            "tool.farminvite.autokick [0/1]",
+            "tool.farminvite.autokick.ignoreplayerlist.add <name>",
+            "tool.farminvite.autokick.ignoreplayerlist.list",
+            "tool.farminvite.autokick.ignoreplayerlist.rem <name>",
+            "tool.farminvite.autokick.level [1-80]",
+            "tool.farminvite.safeword [word]",
+            "tool.farminvite.spam.channels [tokens e.g. 6,g]",
+            "tool.farminvite.spam.icon [0/1]",
+            "tool.farminvite.spam.message [auto|custom text]",
+            "tool.farminvite.spam.prevention [seconds]",
+            "tool.farminvite.spam.send",
+            "tool.farminvite.spam.testingonly [0/1]",
+            "tool.farminvite.torment [0-3]",
+            "tool.getproperties [itemlink/ID]",
+            "tool.minimaprefresh [1/0] or [ms]",
+            "tool.simplemailer.bagkeep.add [itemlink or item ID]",
+            "tool.simplemailer.bagkeep.list",
+            "tool.simplemailer.bagkeep.rem [index]",
+            "tool.simplemailer.recipient [charname]",
+            "tool.simplemailer.send",
+            "tool.sortbags",
+            "tool.vendormanagement [0/1]",
+            "tool.vendormanagement.lootername [name]",
+            "tool.vendormanagement.threshold [N]",
+            "tool.vendormanagement.vendorname [name]",
+            "tracker.dashboard [0/1]",
+            "vendorprofile.[name].[keep/sell].add [target/filter] [--fs] [--pts]",
+            "vendorprofile.[name].[keep/sell].mod ID:#####",
+            "vendorprofile.[name].[keep/sell].rem --listid [ids]",
+            "vendorprofile.[name].[keep/sell].rem ID:#####",
+            "vendorprofile.[name].[keep/sell].rem [target/filter]",
+            "vendorprofile.[name].activate",
+            "vendorprofile.[name].autosell.off",
+            "vendorprofile.[name].autosell.on",
+            "vendorprofile.[name].cleanup",
+            "vendorprofile.[name].deactivate",
+            "vendorprofile.[name].delete",
+            "vendorprofile.[name].keep.list",
+            "vendorprofile.[name].search [item/text]",
+            "vendorprofile.[name].sell.list",
+            "vendorprofile.[name].zone.add [zone,zone,...]",
+            "vendorprofile.[name].zone.delete [zone,...] or *",
+            "vendorprofile.[name].zone.disable",
+            "vendorprofile.[name].zone.enable",
+            "vendorprofile.[name].zone.list",
+            "vendorprofile.[name].zone.register",
+            "vendorprofile.create [name]",
+            "vendorprofile.keep.list",
+            "vendorprofile.list",
+            "vendorprofile.sell.list",
+            "vendorprofile.tempsell [0/1]",
+        }
+        table.sort(helpLines)
         PNNSIM_Print("Commands:")
-        PNNSIM_Print("  vendorprofile.list")
-        PNNSIM_Print("  vendorprofile.keep.list")
-        PNNSIM_Print("  vendorprofile.sell.list")
-        PNNSIM_Print("  vendorprofile.create [name]")
-        PNNSIM_Print("  vendorprofile.[name].delete")
-        PNNSIM_Print("  vendorprofile.[name].deactivate")
-        PNNSIM_Print("  vendorprofile.[name].cleanup")
-        PNNSIM_Print("  vendorprofile.[name].autosell.on")
-        PNNSIM_Print("  vendorprofile.[name].autosell.off")
-        PNNSIM_Print("  vendorprofile.[name].[keep/sell].add [target/filter] [--fs] [--pts]")
-        PNNSIM_Print("  vendorprofile.[name].[keep/sell].rem [target/filter]")
-        PNNSIM_Print("  vendorprofile.[name].[keep/sell].rem ID:#####")
-        PNNSIM_Print("  vendorprofile.[name].[keep/sell].rem --listid [ids]")
-        PNNSIM_Print("  vendorprofile.[name].[keep/sell].mod ID:#####")
-        PNNSIM_Print("  vendorprofile.[name].keep.list")
-        PNNSIM_Print("  vendorprofile.[name].sell.list")
-        PNNSIM_Print("  vendorprofile.[name].search [item/text]")
-        PNNSIM_Print("  vendorprofile.[name].activate")
-        PNNSIM_Print("  vendorprofile.[name].zone.list")
-        PNNSIM_Print("  vendorprofile.[name].zone.register")
-        PNNSIM_Print("  vendorprofile.[name].zone.add [zone,zone,...]")
-        PNNSIM_Print("  vendorprofile.[name].zone.delete [zone,...] or *")
-        PNNSIM_Print("  vendorprofile.[name].zone.enable")
-        PNNSIM_Print("  vendorprofile.[name].zone.disable")
-        PNNSIM_Print("  vendorprofile.tempsell [0/1]")
-        PNNSIM_Print("  console.show")
-        PNNSIM_Print("  console.save")
-        PNNSIM_Print("  console.permclear")
-        PNNSIM_Print("  console.help")
-        PNNSIM_Print("  console.activeprofile [profilename|void]")
-        PNNSIM_Print("  console.defaultprofile [profilename|void]")
-        PNNSIM_Print("  console.autosell [0/1]")
-        PNNSIM_Print("  console.autosell.batchsize [N] (items per batch, default: 50)")
-        PNNSIM_Print("  console.graydelete [0/1]")
-        PNNSIM_Print("  console.delnovalue [0/1]")
-        PNNSIM_Print("  console.verbose [0/1]")
-        PNNSIM_Print("  console.tracker.show")
-        PNNSIM_Print("  console.tracker.genesis.gold.reset")
-        PNNSIM_Print("  console.tracker.genesis.item.reset")
-        PNNSIM_Print("  console.tracker.session.gold.reset")
-        PNNSIM_Print("  console.tracker.session.item.reset")
-        PNNSIM_Print("  tracker.dashboard [0/1]")
-        PNNSIM_Print("  tool.getproperties [itemlink/ID]")
-        PNNSIM_Print("  tool.sortbags")
-        PNNSIM_Print("  tool.bagspace [0/1]")
-        PNNSIM_Print("  tool.minimaprefresh [1/0]")
-        PNNSIM_Print("  tool.minimaprefresh [ms] (default: 100)")
-        PNNSIM_Print("  tool.vendormanagement [0/1]")
-        PNNSIM_Print("  tool.vendormanagement.lootername [name]")
-        PNNSIM_Print("  tool.vendormanagement.vendorname [name]")
-        PNNSIM_Print("  tool.vendormanagement.threshold [N] (free slots to trigger sell, default: 5)")
-        PNNSIM_Print("  tool.simplemailer.recipient [charname]")
-        PNNSIM_Print("  tool.simplemailer.bagkeep.list")
-        PNNSIM_Print("  tool.simplemailer.bagkeep.add [itemlink or item ID]")
-        PNNSIM_Print("  tool.simplemailer.bagkeep.rem [index]")
-        PNNSIM_Print("  tool.simplemailer.send")
+        for _, line in ipairs(helpLines) do
+            PNNSIM_Print("  " .. line)
+        end
         return
     end
 
@@ -908,6 +927,29 @@ function PNNSIM_ProcessCommand(PNNSIM_msg, PNNSIM_isConsole)
             PNNSIM_SimpleMailer_HandleCommand(PNNSIM_msg, PNNSIM_isConsole)
         end
         return
+    end
+
+    if string.sub(cmd_lower, 1, 15) == "tool.farminvite" then
+        if cmd_lower == "tool.farminvite.spam.send" then
+            if PNNSIM_FarmInvite_SendSpam then PNNSIM_FarmInvite_SendSpam() end
+            return
+        end
+        if cmd_lower == "tool.farminvite.autokick.ignoreplayerlist.add" then
+            local name = strtrim(args_part)
+            if name == "" then PrintErr("Usage: tool.farminvite.autokick.ignoreplayerlist.add <name>"); return end
+            if PNNSIM_FarmInvite_IgnoreAdd then PNNSIM_FarmInvite_IgnoreAdd(name) end
+            return
+        end
+        if cmd_lower == "tool.farminvite.autokick.ignoreplayerlist.rem" then
+            local name = strtrim(args_part)
+            if name == "" then PrintErr("Usage: tool.farminvite.autokick.ignoreplayerlist.rem <name>"); return end
+            if PNNSIM_FarmInvite_IgnoreRem then PNNSIM_FarmInvite_IgnoreRem(name) end
+            return
+        end
+        if cmd_lower == "tool.farminvite.autokick.ignoreplayerlist.list" then
+            if PNNSIM_FarmInvite_IgnoreList then PNNSIM_FarmInvite_IgnoreList() end
+            return
+        end
     end
 
     if not PNNSIM_isConsole then

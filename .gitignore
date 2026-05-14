@@ -1,8 +1,13 @@
-# Ignore everything outside src/
-/*
-!/src/
-!.gitignore
-
 # Windows
 Thumbs.db
 desktop.ini
+
+# Dev/tooling (not part of the addon)
+/src/
+/docs/
+/reference/
+/tools/
+/tmp/
+/todo.md
+/claude.exe
+/CLAUDE.md

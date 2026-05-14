@@ -108,6 +108,29 @@ Prefix with a character name to target another character: `Prebble.console.autos
 
 ---
 
+## Farm Invite
+
+> **Storage:** Per-character (`SavedVariablesPerCharacter`)
+
+| Command | Description |
+|---------|-------------|
+| `tool.farminvite 0\|1` | Enable/disable the Farm Invite module |
+| `tool.farminvite.spam.send` | Send (or preview) the spam message |
+| `tool.farminvite.spam.icon 0\|1` | Show/hide the minimap mail icon (default: 1) |
+| `tool.farminvite.spam.prevention [N]` | Cooldown in seconds between sends (posint min 0, default: 60) |
+| `tool.farminvite.spam.channels [tokens]` | Comma-separated channel tokens (e.g. `6,g`). Valid tokens: channel numbers or `g p r s y` |
+| `tool.farminvite.spam.testingonly 0\|1` | Preview message in chat (visible only to you); ignores cooldown (default: 0) |
+| `tool.farminvite.spam.message [text]` | Message to send. `auto` uses the dynamic template; any other value is sent verbatim (default: auto) |
+| `tool.farminvite.autokick 0\|1` | Whether autokick is active (default: 0) |
+| `tool.farminvite.autokick.level [N]` | Level at which players are autokicked (posint 1–80, default: 80) |
+| `tool.farminvite.autokick.ignoreplayerlist.add <name>` | Protect a player from autokick |
+| `tool.farminvite.autokick.ignoreplayerlist.rem <name>` | Remove autokick protection for a player |
+| `tool.farminvite.autokick.ignoreplayerlist.list` | List all protected players |
+| `tool.farminvite.safeword [word]` | Word players whisper to get auto-invited (name, default: inv) |
+| `tool.farminvite.torment [N]` | HC torment tier advertised in the message (posint 0–3, default: 3) |
+
+---
+
 ## Vendor Profiles
 
 > **Storage:** Account-wide but sub-divided per character (`SavedVariables` / `PNNSIM_Profiles[charName][profileKey]`). All characters can see each other's profiles.

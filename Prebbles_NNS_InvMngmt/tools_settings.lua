@@ -53,6 +53,18 @@ PNNSIM_ConfigDefaults = {
     -- Simple mailer
     ["tool.simplemailer.recipient"]                     = { default = "",       type = "string" },
 
+    -- Farm invite
+    ["tool.farminvite"]                                = { default = "0",    type = "bool"     },
+    ["tool.farminvite.autokick"]                       = { default = "0",    type = "bool"     },
+    ["tool.farminvite.autokick.level"]                 = { default = "80",   type = "posint", min = 1,  max = 80 },
+    ["tool.farminvite.safeword"]                       = { default = "inv",  type = "name"     },
+    ["tool.farminvite.torment"]                        = { default = "3",    type = "posint", min = 0,  max = 3  },
+    ["tool.farminvite.spam.icon"]                      = { default = "1",    type = "bool"     },
+    ["tool.farminvite.spam.prevention"]                = { default = "60",   type = "posint", min = 0  },
+    ["tool.farminvite.spam.channels"]                  = { default = "6,g",  type = "channels" },
+    ["tool.farminvite.spam.testingonly"]               = { default = "0",    type = "bool"     },
+    ["tool.farminvite.spam.message"]                   = { default = "auto", type = "freetext" },
+
     -- Minimap refresh
     ["tool.minimaprefresh.frequency"]                = { default = "100",    type = "posint", min = 50  },
 }
@@ -101,6 +113,30 @@ local function ValidateSetting(key, value)
         local stripped = string.gsub(value, "#", "")
         if not string.match(stripped, "^%x%x%x%x%x%x$") then
             return 'Invalid type entered. Expected "hex" received "' .. value .. '"'
+        end
+
+    elseif t == "channels" then
+        local validLetters = { g=true, p=true, r=true, s=true, y=true }
+        for token in string.gmatch(value .. ",", "([^,]+),") do
+            token = strtrim(token)
+            local n = tonumber(token)
+            if n then
+                local chanName = GetChannelName(n)
+                if not chanName or chanName == "" then
+                    return "Invalid channel token '" .. token .. "': not a joined channel"
+                end
+            elseif validLetters[token] then
+                if token == "g" and not IsInGuild() then
+                    return "Invalid channel token 'g': not in a guild"
+                end
+            else
+                return "Invalid channel token '" .. token .. "': must be a channel number or one of: g p r s y"
+            end
+        end
+
+    elseif t == "freetext" then
+        if value == "" then
+            return 'Invalid type entered. Expected "freetext" but received empty string'
         end
     end
 
@@ -217,9 +253,10 @@ local function BuildListing(charScope, keyPrefix)
                 local propMatch = string.sub(kProp, 1, string.len(keyPrefix)) == keyPrefix
                 if charMatch and propMatch and PNNSIM_ConfigDefaults[kProp] then
                     local entry = PNNSIM_ConfigDefaults[kProp]
+                    local displayKey = charScope and kProp or (kChar .. "." .. kProp)
                     local line = string.format(
-                        "|cFF%s%s.%s|r: |cFF%s%s|r (default: %s)",
-                        cmdHex, kChar, kProp, outHex,
+                        "|cFF%s%s|r: |cFF%s%s|r (default: %s)",
+                        cmdHex, displayKey, outHex,
                         tostring(PNNSIM_ConsoleConfig[k]), tostring(entry.default)
                     )
                     table.insert(lines, line)
@@ -246,9 +283,10 @@ local function BuildListing(charScope, keyPrefix)
                 else
                     displayVal = tostring(entry.default)
                 end
+                local displayKey = charScope and k or (cName .. "." .. k)
                 local line = string.format(
-                    "|cFF%s%s.%s|r: |cFF%s%s|r (default: %s)",
-                    cmdHex, cName, k, outHex, displayVal, tostring(entry.default)
+                    "|cFF%s%s|r: |cFF%s%s|r (default: %s)",
+                    cmdHex, displayKey, outHex, displayVal, tostring(entry.default)
                 )
                 table.insert(lines, line)
             end
@@ -451,16 +489,14 @@ function PNNSIM_HandleSettingsInput(text)
             "tool.getproperties",
             "tool.sortbags",
             "tool.minimaprefresh",
-            "tool.bagspace",
-            "tool.vendormanagement",
-            "tool.vendormanagement.lootername",
-            "tool.vendormanagement.vendorname",
-            "tool.vendormanagement.threshold",
-            "tool.simplemailer.recipient",
             "tool.simplemailer.bagkeep.list",
             "tool.simplemailer.bagkeep.add",
             "tool.simplemailer.bagkeep.rem",
             "tool.simplemailer.send",
+            "tool.farminvite.spam.send",
+            "tool.farminvite.autokick.ignoreplayerlist.add",
+            "tool.farminvite.autokick.ignoreplayerlist.rem",
+            "tool.farminvite.autokick.ignoreplayerlist.list",
         }
         local ck = CmdHex()
         for _, cmd in ipairs(allCmds) do
@@ -468,6 +504,10 @@ function PNNSIM_HandleSettingsInput(text)
                 table.insert(lines, "|cFF" .. ck .. cmd .. "|r  [command]")
             end
         end
+
+        table.sort(lines, function(a, b)
+            return string.sub(a, 11) < string.sub(b, 11)
+        end)
 
         if #lines == 0 then
             PNNSIM_Console_Print("No settings or profiles found.")
@@ -562,6 +602,11 @@ function PNNSIM_HandleSettingsInput(text)
     if entry.type == "hex" then
         writeVal = string.gsub(writeVal, "#", "")
     end
+    if entry.type == "freetext" then
+        -- ResolvePath lowercases everything; re-extract the value with original case
+        local _, rawValue = string.match(text, "^%S+%s+(.+)$")
+        if rawValue then writeVal = strtrim(rawValue) end
+    end
 
     if isTrackerKey then
         PNNSIM_CharData = PNNSIM_CharData or {}
@@ -572,6 +617,9 @@ function PNNSIM_HandleSettingsInput(text)
     end
     if settingKey == "tool.minimaprefresh.frequency" then
         if PNNSIM_MinimapRefresh_RestartIfActive then PNNSIM_MinimapRefresh_RestartIfActive() end
+    end
+    if settingKey == "tool.farminvite" or settingKey == "tool.farminvite.spam.icon" then
+        if PNNSIM_FarmInvite_RefreshIcon then PNNSIM_FarmInvite_RefreshIcon() end
     end
     PNNSIM_Console_Print("|cFF" .. outHex() .. fullKey .. " = " .. writeVal .. "|r")
     if PNNSIM_InitConsoleTheme then PNNSIM_InitConsoleTheme() end

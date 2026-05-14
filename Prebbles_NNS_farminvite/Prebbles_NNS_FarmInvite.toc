@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: Prebbles NNS Farm Invite
+## Notes: Recruitment spam and autokick helpers for Prebbles_NNS_InvMngmt.
+## Author: Prebble
+## Version: 0.1
+## RequiredDeps: Prebbles_NNS_InvMngmt
+
+farminvite.lua

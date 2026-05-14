@@ -21,9 +21,10 @@ Slash command: `/nps <command>` or type directly in the console.
 13. [Tools Reference](#13-tools-reference)
 14. [Simple Mailer](#14-simple-mailer)
 15. [Vendor Management](#15-vendor-management)
-16. [Temp Sell Mode](#16-temp-sell-mode)
-17. [Path Discovery — Exploring Commands](#17-path-discovery--exploring-commands)
-18. [Tips and Tricks](#18-tips-and-tricks)
+16. [Farm Invite](#16-farm-invite)
+17. [Temp Sell Mode](#17-temp-sell-mode)
+18. [Path Discovery — Exploring Commands](#18-path-discovery--exploring-commands)
+19. [Tips and Tricks](#19-tips-and-tricks)
 
 ---
 
@@ -712,7 +713,119 @@ tool.vendormanagement.threshold 3
 
 ---
 
-## 16. Temp Sell Mode
+## 16. Farm Invite
+
+The Farm Invite module broadcasts a recruitment message to configured chat channels, with optional spam prevention cooldown.
+
+### Enable the Module
+
+```
+tool.farminvite 1
+```
+
+When enabled, a mailbox icon appears at the edge of your minimap (if `tool.farminvite.spam.icon` is 1). Left-drag the icon to reposition it around the minimap edge.
+
+### Sending Spam
+
+Three ways to send the spam message:
+
+- **Console command:** `tool.farminvite.spam.send`
+- **Portrait click:** Left-click your player portrait
+- **Minimap icon:** Left-click the mail icon on the minimap edge
+
+All three trigger the same spam logic, including the cooldown check.
+
+### Spam Prevention
+
+A cooldown prevents accidental double-sends (default: 60 seconds):
+
+```
+tool.farminvite.spam.prevention 60
+```
+
+Set to `0` to disable the cooldown entirely.
+
+### Testing Mode
+
+Preview the message in your chat window (visible only to you) without sending it to any channel. The cooldown is also bypassed in this mode:
+
+```
+tool.farminvite.spam.testingonly 1
+```
+
+### Channel Configuration
+
+Set the channels to send to as comma-separated tokens:
+
+```
+tool.farminvite.spam.channels 6,g
+```
+
+Valid tokens:
+
+| Token | Target |
+|-------|--------|
+| Number (e.g. `6`) | Joined channel by index |
+| `g` | Guild chat (requires guild membership) |
+| `p` | Party |
+| `r` | Raid |
+| `s` | Say |
+| `y` | Yell |
+
+If a numbered channel is not currently joined, it is skipped with a console warning. If `g` is set but you are not in a guild, it is also skipped.
+
+### Auto Message
+
+When `tool.farminvite.spam.message` is `auto` (the default), the message is built from your configuration values.
+
+With autokick enabled (`tool.farminvite.autokick 1`):
+
+```
+Farming/boosting in IC until I'm tired. Autokick at 79. Requirements: don't be 79, be in HC3 & have flying. Tipping is not needed but will redistribute profits to new players! /w with inv to get autoinvited.
+```
+
+With autokick disabled (`tool.farminvite.autokick 0`):
+
+```
+Farming/boosting in IC until I'm tired. Requirements: don't be 80 be in HC3 & have flying. Tipping is not needed but will redistribute profits to new players! /w with inv to get autoinvited.
+```
+
+Configure the variables used in the template:
+
+```
+tool.farminvite.torment 3
+tool.farminvite.safeword inv
+tool.farminvite.autokick 1
+tool.farminvite.autokick.level 79
+```
+
+### Custom Message
+
+To send a fixed message instead of the auto template:
+
+```
+tool.farminvite.spam.message Farming IC! /w inv for invite.
+```
+
+Set back to `auto` to resume the dynamic template:
+
+```
+tool.farminvite.spam.message auto
+```
+
+### Autokick Ignore List
+
+Players on this list will not be autokicked (used by future autokick logic). The list is stored per-character.
+
+```
+tool.farminvite.autokick.ignoreplayerlist.add Prebble
+tool.farminvite.autokick.ignoreplayerlist.list
+tool.farminvite.autokick.ignoreplayerlist.rem Prebble
+```
+
+---
+
+## 17. Temp Sell Mode
 
 Temp Sell mode bypasses your keep list entirely. When enabled, **everything in your bags is sold or deleted** at the next vendor visit, except:
 
@@ -735,7 +848,7 @@ vendorprofile.tempsell 0
 
 ---
 
-## 17. Path Discovery — Exploring Commands
+## 18. Path Discovery — Exploring Commands
 
 Typing any prefix ending with `.` and pressing **Enter** shows everything under that path. This is the fastest way to explore what is available without memorising all commands.
 
@@ -756,7 +869,7 @@ Typing any prefix ending with `.` and pressing **Enter** shows everything under 
 
 ---
 
-## 18. Tips and Tricks
+## 19. Tips and Tricks
 
 ### Use Arrow Up to repeat and tweak rules
 
