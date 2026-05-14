@@ -1,0 +1,8 @@
+# Ignore everything outside src/
+/*
+!/src/
+!.gitignore
+
+# Windows
+Thumbs.db
+desktop.ini

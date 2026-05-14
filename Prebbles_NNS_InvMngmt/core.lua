@@ -401,14 +401,6 @@ function PNNSIM_IsExplicitlyInSellList(itemData, list)
     return false
 end
 
-local function PNNSIM_GetSellBatchSize()
-    local total = 0
-    for bag = 0, 4 do total = total + (GetContainerNumSlots(bag) or 0) end
-    local n = math.floor(total / 4)
-    if n < 1 then n = 1 end
-    return n
-end
-
 local function PNNSIM_RunSellQueue(state)
     if not MerchantFrame:IsShown() then
         PNNSIM_AbortSell("merchant closed")
@@ -423,7 +415,12 @@ local function PNNSIM_RunSellQueue(state)
         return
     end
 
-    local batch = PNNSIM_GetSellBatchSize()
+    -- Items-per-batch from config (default 50). With 102 items and batchsize 50,
+    -- this produces ceil(102/50) = 3 batches (50 + 50 + 2). Spreading the sell
+    -- across ticks keeps the merchant frame open long enough for MERCHANT_CLOSED
+    -- to abort mid-sell instead of dumping everything in one frame.
+    local batch = tonumber(GetConfValCore("console.autosell.batchsize")) or 50
+    if batch < 1 then batch = 50 end
     local processed = 0
     while #state.queue > 0 and processed < batch do
         local item = table.remove(state.queue, 1)

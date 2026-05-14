@@ -420,6 +420,8 @@ Then open a vendor and the addon will evaluate your bags against the active prof
 
 If `console.autosell 1` or the profile has autosell enabled, selling triggers automatically when you open a vendor.
 
+The sell queue is processed in batches of `console.autosell.batchsize` items per frame (default: 50). With 102 items to sell at the default, that becomes 3 batches (50 + 50 + 2). Spreading the sell across multiple frames keeps the merchant frame open long enough for the addon to abort cleanly if you close the vendor mid-sell — preventing leftover items from being equipped or used.
+
 ### Gray deletion
 
 If `console.graydelete 1`, gray items are deleted automatically when your bags update (without needing to be at a vendor). Useful to immediately free slots from trash.
@@ -447,6 +449,7 @@ All settings can be:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `console.autosell` | `0` | Auto-sell matching items when a vendor opens |
+| `console.autosell.batchsize` | `50` | Items processed per sell batch (posint ≥1). Total batches = `ceil(queue_size / batchsize)`. Lower values spread the sell across more frames; higher values finish faster but make a mid-sell merchant close less recoverable. |
 | `console.graydelete` | `0` | Delete gray items automatically on bag update |
 | `console.verbose` | `0` | Print a message for every sold/deleted item |
 | `console.delnovalue` | `0` | Delete zero-value items instead of selling them |

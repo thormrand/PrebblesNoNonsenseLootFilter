@@ -3,6 +3,17 @@
 -- Companion lifecycle logic adapted from AutoLoot v4.0
 -- by Veronica-Vasilieva (https://github.com/Veronica-Vasilieva/AutoLoot)
 -- Used with attribution under the project's open-source license.
+--
+-- Self-healing watchdog redesign (2026-05-13):
+--   * Single 2s watchdog reconciles companion-out reality to a desired state.
+--   * No closure-based retry chains: missed summons self-heal on the next tick.
+--   * Combat-recent gate (<60s since last combat / kill / regen edge).
+--   * Channel/cast guard, mount guard, combat-lockdown guard inside watchdog.
+--   * Retry cap of 5 attempts per state-burst; resets on state change, mount
+--     transition, or fresh combat.
+--   * Vendor button visibility tracks the vendor companion's actual active
+--     state (FindCompanion(vendor).active == true) plus a COMPANION_UPDATE
+--     event hook for instant hide on dismiss.
 
 -------------------------------------------------------------------------------
 -- Config helpers
@@ -39,7 +50,9 @@ end
 -- Utility
 -------------------------------------------------------------------------------
 local function Print(msg)
-    PNNSIM_Console_Print("|cFF00CCFF[VendorMgmt]|r " .. tostring(msg))
+    if PNNSIM_Console_Print then
+        PNNSIM_Console_Print("|cFF00CCFF[VendorMgmt]|r " .. tostring(msg))
+    end
 end
 
 local function GetFreeSlots()
@@ -53,7 +66,6 @@ end
 
 -------------------------------------------------------------------------------
 -- Timer helper (C_Timer unavailable in WotLK 3.3.5a)
--- Adapted from AutoLoot v4.0 by Veronica-Vasilieva
 -------------------------------------------------------------------------------
 local pendingTimers = {}
 local timerFrame = CreateFrame("Frame")
@@ -64,7 +76,8 @@ timerFrame:SetScript("OnUpdate", function(self, elapsed)
         t.remaining = t.remaining - elapsed
         if t.remaining <= 0 then
             table.remove(pendingTimers, i)
-            t.fn()
+            local ok, err = pcall(t.fn)
+            if not ok then Print("|cffff4444Timer error:|r " .. tostring(err)) end
         end
     end
 end)
@@ -74,8 +87,7 @@ local function After(delay, fn)
 end
 
 -------------------------------------------------------------------------------
--- Companion logic
--- Adapted from AutoLoot v4.0 by Veronica-Vasilieva
+-- Companion helpers
 -------------------------------------------------------------------------------
 local MAX_COMPANION_DISTANCE = 5
 
@@ -92,82 +104,17 @@ local function FindCompanion(name)
     return nil, false
 end
 
-PNNSIVM_SummoningLock = false
-
-local function SummonWithVerify(name, onSuccess, onFail)
-    local idx, active = FindCompanion(name)
-    if not idx then
-        onFail("notfound")
-        return
-    end
-    if active then
-        onSuccess()
-        return
-    end
-
-    local attempts = 0
-    local channelWaited = 0
-    PNNSIVM_SummoningLock = true
-
-    local function tryOnce()
-        attempts = attempts + 1
-
-        local function waitIfChanneling(thenSummon)
-            local ok, channeling, casting = pcall(function()
-                return UnitChannelInfo("player"), UnitCastingInfo("player")
-            end)
-            if ok and (channeling or casting) then
-                channelWaited = channelWaited + 0.5
-                if channelWaited >= 10 then
-                    PNNSIVM_SummoningLock = false
-                    return
-                end
-                After(0.5, function() waitIfChanneling(thenSummon) end)
-            else
-                thenSummon()
-            end
-        end
-
-        waitIfChanneling(function()
-            CallCompanion("CRITTER", idx)
-            After(2, function()
-                local _, nowActive = FindCompanion(name)
-                if nowActive then
-                    PNNSIVM_SummoningLock = false
-                    onSuccess()
-                elseif attempts < 3 then
-                    tryOnce()
-                else
-                    PNNSIVM_SummoningLock = false
-                    onFail("exhausted")
-                end
-            end)
-        end)
-    end
-
-    tryOnce()
-end
-
-local function SummonVM(name)
-    SummonWithVerify(name,
-        function() end,
-        function(reason)
-            if reason == "notfound" then
-                Print("Companion '" .. (name or "?") .. "' not found in companion list.")
-            else
-                Print("Companion '" .. (name or "?") .. "' failed to appear after 3 attempts.")
-            end
-        end
-    )
-end
-
-local function DismissVM()
-    DismissCompanion("CRITTER")
-end
-
 local function IsPlayerMountedOrFlying()
     if IsFlying  and IsFlying()  then return true end
     if IsMounted and IsMounted() then return true end
+    return false
+end
+
+local function IsPlayerCastingOrChanneling()
+    local ok, casting = pcall(UnitCastingInfo, "player")
+    if ok and casting then return true end
+    local ok2, channeling = pcall(UnitChannelInfo, "player")
+    if ok2 and channeling then return true end
     return false
 end
 
@@ -181,11 +128,25 @@ local function GetCompanionDistance()
 end
 
 -------------------------------------------------------------------------------
+-- Combat-recent tracking
+-------------------------------------------------------------------------------
+local lastCombatTime = 0
+local COMBAT_RECENT_WINDOW = 60
+
+local function RecentCombat()
+    if UnitAffectingCombat and UnitAffectingCombat("player") then return true end
+    return (time() - lastCombatTime) < COMBAT_RECENT_WINDOW
+end
+
+local function BumpCombatTime()
+    local wasRecent = RecentCombat()
+    lastCombatTime = time()
+    return wasRecent
+end
+
+-------------------------------------------------------------------------------
 -- Vendor target button (SecureActionButton)
 -- Adapted from AutoLoot v4.0 by Veronica-Vasilieva
--- WoW protects InteractUnit() — addons cannot auto-open the merchant window.
--- A SecureActionButton's /target macrotext runs only on real mouse click,
--- after which the player presses Interact-with-Target to open the vendor.
 -------------------------------------------------------------------------------
 local vendorBtn
 
@@ -253,72 +214,189 @@ end
 
 local function ShowVendorBtn()
     if not vendorBtn then return end
+    if vendorBtn:IsShown() then return end
     UpdateVendorBtnMacro()
     vendorBtn:Show()
 end
 
 local function HideVendorBtn()
-    if vendorBtn then vendorBtn:Hide() end
+    if vendorBtn and vendorBtn:IsShown() then vendorBtn:Hide() end
 end
 
+local SyncVendorBtn  -- forward declaration; defined after state vars exist
+
 -------------------------------------------------------------------------------
--- State machine
+-- State + watchdog
 -------------------------------------------------------------------------------
 local S_IDLE, S_LOOTING, S_SELLING = "IDLE", "LOOTING", "SELLING"
-local currentState       = S_IDLE
-local waitingForMerchant = false
-local triggeredSellCycle = false
+local currentState        = S_IDLE
+local triggeredSellCycle  = false   -- merchant-show should run PNNSIM_TriggerSell
+local summonAttempts      = 0
+local lastSummonAttempt   = 0
+local lastDismissAttempt  = 0
+local capWarnedThisBurst  = false
+local wasMounted          = false
+local wasCombatRecent     = false
+local stuckCheckTimer     = 0
+local STUCK_INTERVAL      = 3
+local watchdogTimer       = 0
+local WATCHDOG_INTERVAL   = 2
+local SUMMON_BACKOFF      = 3
+local MAX_SUMMON_ATTEMPTS = 5
+local bagUpdateDirty      = false
 
-local function SetState(state)
-    currentState = state
+-- Sync button visibility to the live vendor companion state.
+-- Predicate: vendor companion is in the list AND marked active by the API.
+-- Hides for: combat lockdown, mounted/flying, addon disabled, or wrong state.
+SyncVendorBtn = function()
+    -- Note: Show/Hide on this frame is NOT protected; only SetAttribute is
+    -- (and UpdateVendorBtnMacro guards that). Do not short-circuit on
+    -- InCombatLockdown() here — that was hiding the button mid-combat and
+    -- only letting it appear after PLAYER_REGEN_ENABLED.
+    if not IsEnabled() then HideVendorBtn(); return end
+    if currentState ~= S_SELLING then HideVendorBtn(); return end
+    if IsPlayerMountedOrFlying() then HideVendorBtn(); return end
+    local _, active = FindCompanion(GetVendorName())
+    if active then ShowVendorBtn() else HideVendorBtn() end
 end
 
+local function ResetSummonBurst(reason)
+    if summonAttempts ~= 0 or capWarnedThisBurst then
+        summonAttempts = 0
+        capWarnedThisBurst = false
+    end
+end
+
+local function SetState(state)
+    if currentState == state then return end
+    currentState = state
+    ResetSummonBurst("state change")
+end
+
+local function DismissCompanionSafe()
+    if (time() - lastDismissAttempt) < 1 then return end
+    lastDismissAttempt = time()
+    DismissCompanion("CRITTER")
+    HideVendorBtn()
+end
+
+-- Watchdog: reconciles companion-out reality to desired state.
+-- Called every WATCHDOG_INTERVAL seconds from the main OnUpdate.
+local function Watchdog()
+    if not IsEnabled() then
+        HideVendorBtn()
+        return
+    end
+
+    -- Desired companion per state
+    local desiredName, otherName
+    if currentState == S_SELLING then
+        desiredName, otherName = GetVendorName(), GetLooterName()
+    elseif currentState == S_LOOTING then
+        desiredName, otherName = GetLooterName(), GetVendorName()
+    end
+
+    -- Hard gates: nothing summoned/shown if these fail
+    if not RecentCombat() then
+        HideVendorBtn()
+        -- If a companion is out and we're long-idle, leave it alone — player may
+        -- have manually summoned. Watchdog does not dismiss outside its loop.
+        return
+    end
+
+    if IsPlayerMountedOrFlying() then
+        HideVendorBtn()
+        return
+    end
+
+    -- Button visibility tracks the live vendor-active state.
+    SyncVendorBtn()
+
+    if not desiredName then return end
+
+    -- Raid icon on our companion
+    if UnitExists("pet") then
+        local petName = (UnitName("pet") or ""):lower()
+        if petName == desiredName:lower() then
+            SetRaidTarget("pet", 1)
+        end
+    end
+
+    -- Casting/channeling guard — never summon mid-cast
+    if IsPlayerCastingOrChanneling() then return end
+
+    local idx, active = FindCompanion(desiredName)
+    if active then
+        summonAttempts = 0
+        capWarnedThisBurst = false
+        return
+    end
+
+    if not idx then
+        -- Not in companion list at all — print once per burst, then back off.
+        if not capWarnedThisBurst then
+            Print("|cffff4444Companion '" .. desiredName .. "' not found in companion list.|r")
+            capWarnedThisBurst = true
+        end
+        return
+    end
+
+    -- If the wrong companion is currently out, dismiss it first
+    if otherName then
+        local _, otherActive = FindCompanion(otherName)
+        if otherActive then
+            DismissCompanionSafe()
+            lastSummonAttempt = time()  -- defer summon to next tick
+            return
+        end
+    end
+
+    -- Retry cap
+    if summonAttempts >= MAX_SUMMON_ATTEMPTS then
+        if not capWarnedThisBurst then
+            Print("|cffff4444Summon cap reached (" .. MAX_SUMMON_ATTEMPTS .. " tries) for '" .. desiredName .. "'. Resets on next state change, mount, or new combat.|r")
+            capWarnedThisBurst = true
+        end
+        return
+    end
+
+    -- Backoff between attempts
+    if (time() - lastSummonAttempt) < SUMMON_BACKOFF then return end
+
+    CallCompanion("CRITTER", idx)
+    summonAttempts = summonAttempts + 1
+    lastSummonAttempt = time()
+    -- API can report summoned=0 for a frame or two after CallCompanion. Poke
+    -- the visibility sync shortly after so the icon doesn't wait on the next
+    -- 2s watchdog tick (or on UNIT_PET / COMPANION_UPDATE timing).
+    After(0.3, SyncVendorBtn)
+    After(0.8, SyncVendorBtn)
+end
+
+-------------------------------------------------------------------------------
+-- Cycle transitions
+-------------------------------------------------------------------------------
 local function StartLootCycle()
     if not IsEnabled() then return end
+    triggeredSellCycle = false
     SetState(S_LOOTING)
-    SummonVM(GetLooterName())
+    -- Watchdog will summon; nothing to do here.
 end
 
 local function StartSellCycle()
     if currentState == S_SELLING then return end
-    SetState(S_SELLING)
-    triggeredSellCycle = true
     Print("Bags full — switching to vendor companion...")
-    DismissVM()
-    After(1.5, function()
-        if currentState ~= S_SELLING then return end
-        SummonWithVerify(GetVendorName(),
-            function()
-                waitingForMerchant = true
-                ShowVendorBtn()
-                if InCombatLockdown() then
-                    Print("|cffffd700In combat:|r click |cffffff00Target Vendor|r, then press your |cffffff00Interact with Target|r keybind.")
-                end
-                After(8, function()
-                    if waitingForMerchant and currentState == S_SELLING then
-                        PlaySound("igMainMenuOptionCheckBoxOn")
-                        Print("|cffffd700Reminder:|r click |cffffff00Target Vendor|r, then press Interact with Target.")
-                    end
-                end)
-            end,
-            function(reason)
-                waitingForMerchant = false
-                HideVendorBtn()
-                if reason == "notfound" then
-                    Print("|cffff4444Vendor '" .. GetVendorName() .. "' not found in companion list.|r")
-                else
-                    Print("|cffff4444Vendor companion failed to appear after 3 attempts.|r")
-                end
-            end
-        )
-    end)
+    triggeredSellCycle = true
+    DismissCompanionSafe()
+    SetState(S_SELLING)
+    -- Watchdog reconciles vendor summon + button visibility.
 end
 
 local function OnMerchantShow()
-    waitingForMerchant = false
     HideVendorBtn()
     if not triggeredSellCycle then return end
     After(0.3, function()
+        if not MerchantFrame or not MerchantFrame:IsShown() then return end
         if CanMerchantRepair() then
             RepairAllItems()
             Print("All items repaired.")
@@ -328,92 +406,78 @@ local function OnMerchantShow()
 end
 
 local function OnMerchantClosed()
+    local wasMidSell = triggeredSellCycle
     triggeredSellCycle = false
-    HideVendorBtn()
+
     if currentState ~= S_SELLING then return end
-    if GetFreeSlots() > 0 then
-        DismissVM()
-        After(1.5, function()
-            if currentState == S_SELLING then StartLootCycle() end
-        end)
+
+    local free = GetFreeSlots()
+    if free > GetThreshold() then
+        if wasMidSell then
+            Print("Merchant closed — sell aborted. Bags OK, back to looting.")
+        end
+        DismissCompanionSafe()
+        SetState(S_LOOTING)
     else
-        -- Bags still full: sell was incomplete — retry the sell cycle instead of going idle.
-        -- Reset to IDLE first so StartSellCycle() doesn't bail out (it guards against re-entry).
-        SetState(S_IDLE)
-        After(1.5, function()
-            StartSellCycle()
-        end)
+        if wasMidSell then
+            Print("|cffffaa00Merchant closed before sell finished|r (free=" .. free .. " <= threshold=" .. GetThreshold() .. ") — staying in sell mode.")
+        end
+        -- Keep state SELLING; reset attempts so watchdog resummons vendor cleanly.
+        ResetSummonBurst("merchant closed early")
+        triggeredSellCycle = true  -- the next MERCHANT_SHOW must re-trigger sell
     end
 end
 
 -------------------------------------------------------------------------------
--- OnUpdate: mount detection + stuck check
--- Adapted from AutoLoot v4.0 by Veronica-Vasilieva
+-- OnUpdate: mount transitions, stuck check, watchdog
 -------------------------------------------------------------------------------
-local btnPollTimer = 0
-local raidIconSet = false
-local wasMounted      = false
-local stuckCheckTimer = 0
-local STUCK_INTERVAL  = 3
-local bagUpdateDirty  = false
-
 local mainFrame = CreateFrame("Frame", "PNNSIVM_MainFrame", UIParent)
 mainFrame:SetScript("OnUpdate", function(self, elapsed)
     if not IsEnabled() then return end
 
+    -- Mount transition: dismiss on mount, reset burst on either edge
     local nowMounted = IsPlayerMountedOrFlying()
     if nowMounted ~= wasMounted then
         wasMounted = nowMounted
+        ResetSummonBurst("mount transition")
         if nowMounted then
             local _, looterActive = FindCompanion(GetLooterName())
             local _, vendorActive = FindCompanion(GetVendorName())
             if looterActive or vendorActive then
                 After(1.0, function()
-                    if IsPlayerMountedOrFlying() then DismissVM() end
-                end)
-            end
-        else
-            if currentState == S_LOOTING then
-                After(3.0, function()
-                    if IsPlayerMountedOrFlying() then return end
-                    if currentState == S_LOOTING then
-                        local _, looterActive = FindCompanion(GetLooterName())
-                        if not looterActive then SummonVM(GetLooterName()) end
-                    end
-                end)
-            elseif currentState == S_SELLING then
-                waitingForMerchant = true
-                After(3.0, function()
-                    if IsPlayerMountedOrFlying() then return end
-                    if currentState == S_SELLING then
-                        local _, vendorActive = FindCompanion(GetVendorName())
-                        if not vendorActive then SummonVM(GetVendorName()) end
-                    end
+                    if IsPlayerMountedOrFlying() then DismissCompanionSafe() end
                 end)
             end
         end
     end
 
-    if currentState == S_LOOTING and not nowMounted then
+    -- Combat-recent edge: false -> true resets the burst counter
+    local nowCombatRecent = RecentCombat()
+    if nowCombatRecent and not wasCombatRecent then
+        ResetSummonBurst("combat resumed")
+    end
+    wasCombatRecent = nowCombatRecent
+
+    -- Stuck distance check (LOOTING only, on ground)
+    if currentState == S_LOOTING and not nowMounted and nowCombatRecent then
         stuckCheckTimer = stuckCheckTimer + elapsed
         if stuckCheckTimer >= STUCK_INTERVAL then
             stuckCheckTimer = 0
-            local dist = GetCompanionDistance()
-            if not dist then
-                -- distance unavailable; skip this tick
-            elseif dist > MAX_COMPANION_DISTANCE then
-                Print("Loot companion stuck (" .. math.floor(dist) .. " yds) — resummoning...")
-                DismissVM()
-                After(0.5, function()
-                    if currentState == S_LOOTING then SummonVM(GetLooterName()) end
-                end)
+            local _, active = FindCompanion(GetLooterName())
+            if active then
+                local dist = GetCompanionDistance()
+                if dist and dist > MAX_COMPANION_DISTANCE then
+                    Print("Loot companion stuck (" .. math.floor(dist) .. " yds) — resummoning...")
+                    DismissCompanionSafe()
+                    ResetSummonBurst("stuck respawn")
+                end
             end
         end
     else
         stuckCheckTimer = 0
     end
 
-    -- BAG_UPDATE sets the dirty flag; consume once per tick to avoid thrashing.
+    -- BAG_UPDATE → check threshold on next tick (cheap)
     if bagUpdateDirty then
         bagUpdateDirty = false
         if currentState == S_LOOTING and not nowMounted and GetFreeSlots() <= GetThreshold() then
@@ -421,34 +485,12 @@ mainFrame:SetScript("OnUpdate", function(self, elapsed)
         end
     end
 
-    btnPollTimer = btnPollTimer + elapsed
-    if btnPollTimer >= 1 then
-        btnPollTimer = 0
-
-        -- Button sync
-        local _, vendorActive = FindCompanion(GetVendorName())
-        local _, looterActive = FindCompanion(GetLooterName())
-        if vendorActive then
-            ShowVendorBtn()
-        else
-            HideVendorBtn()
-        end
-
-        -- Raid icon: set on whichever companion is currently summoned.
-        -- Use FindCompanion (authoritative) to gate the block; UnitName("pet")
-        -- may refer to a combat pet on Hunter/Warlock/DK, so compare
-        -- case-insensitively to handle config-name capitalisation differences.
-        if vendorActive or looterActive then
-            if UnitExists("pet") then
-                local petName = (UnitName("pet") or ""):lower()
-                if petName == GetVendorName():lower() or petName == GetLooterName():lower() then
-                    SetRaidTarget("pet", 1)
-                    raidIconSet = true
-                end
-            end
-        elseif raidIconSet then
-            raidIconSet = false
-        end
+    -- Watchdog tick
+    watchdogTimer = watchdogTimer + elapsed
+    if watchdogTimer >= WATCHDOG_INTERVAL then
+        watchdogTimer = 0
+        local ok, err = pcall(Watchdog)
+        if not ok then Print("|cffff4444Watchdog error:|r " .. tostring(err)) end
     end
 end)
 
@@ -461,30 +503,59 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("MERCHANT_SHOW")
 eventFrame:RegisterEvent("MERCHANT_CLOSED")
 eventFrame:RegisterEvent("BAG_UPDATE")
+eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+eventFrame:RegisterEvent("COMPANION_UPDATE")
+eventFrame:RegisterEvent("UNIT_PET")
+
+local playerGUID
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
+        playerGUID = UnitGUID("player")
         BuildVendorButton()
-        if IsEnabled() then
-            StartLootCycle()
-        end
+        if IsEnabled() then StartLootCycle() end
+
     elseif event == "PLAYER_ENTERING_WORLD" then
-        -- Fires on login, reload, and zone changes. Ensure looter is summoned
-        -- if we're idle/looting; SummonVM is a no-op when already active.
-        -- PLAYER_LOGIN does not fire on /reload, so build the button here too.
+        playerGUID = UnitGUID("player")
         BuildVendorButton()
         if IsEnabled() and currentState ~= S_SELLING then
-            After(1.0, function()
-                if currentState ~= S_SELLING and IsEnabled() then
-                    StartLootCycle()
-                end
-            end)
+            -- Don't summon directly; just ensure state is LOOTING.
+            -- Watchdog handles the summon on the next tick (combat-recent gated).
+            SetState(S_LOOTING)
+            triggeredSellCycle = false
         end
+
     elseif event == "MERCHANT_SHOW" then
         OnMerchantShow()
+
     elseif event == "MERCHANT_CLOSED" then
         OnMerchantClosed()
+
     elseif event == "BAG_UPDATE" then
         bagUpdateDirty = true
+
+    elseif event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+        BumpCombatTime()
+        if event == "PLAYER_REGEN_ENABLED" then SyncVendorBtn() end
+
+    elseif event == "COMPANION_UPDATE" or event == "UNIT_PET" then
+        -- UNIT_PET is the reliable "your critter just spawned/despawned" signal
+        -- in 3.3.5a; COMPANION_UPDATE covers list-level changes. Either way,
+        -- re-sync immediately so the icon never waits for the 2s watchdog.
+        local unit = ...
+        if event ~= "UNIT_PET" or unit == "player" then
+            SyncVendorBtn()
+        end
+
+    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        -- PARTY_KILL fires when player (or party) kills a mob. UNIT_DIED has no
+        -- reliable source, so we don't use it here.
+        local _, subEvent, sourceGUID = ...
+        if subEvent == "PARTY_KILL" and sourceGUID and playerGUID
+           and sourceGUID == playerGUID then
+            BumpCombatTime()
+        end
     end
 end)

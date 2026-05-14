@@ -28,6 +28,7 @@ Prefix with a character name to target another character: `Prebble.console.autos
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `console.autosell` | bool | `0` | Auto-sell at vendors |
+| `console.autosell.batchsize` | posint (≥1) | `50` | Items processed per sell batch; total batches = ceil(queue / batchsize) |
 | `console.graydelete` | bool | `0` | Delete gray items on bag update |
 | `console.verbose` | bool | `0` | Extra output during sell/delete |
 | `console.delnovalue` | bool | `0` | Delete zero-value items |

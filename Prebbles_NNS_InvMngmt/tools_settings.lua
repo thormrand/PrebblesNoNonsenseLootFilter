@@ -18,6 +18,7 @@ PNNSIM_ConfigDefaults = {
 
     -- Console behaviour
     ["console.autosell"]                             = { default = "0",      type = "bool"   },
+    ["console.autosell.batchsize"]                   = { default = "50",     type = "posint", min = 1 },
     ["console.graydelete"]                           = { default = "0",      type = "bool"   },
     ["console.verbose"]                              = { default = "0",      type = "bool"   },
     ["console.delnovalue"]                           = { default = "0",      type = "bool"   },
