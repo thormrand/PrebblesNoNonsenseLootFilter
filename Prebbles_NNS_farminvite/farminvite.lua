@@ -256,11 +256,51 @@ local function BuildMinimapIcon()
 end
 
 -------------------------------------------------------------------------------
+-- Whisper invite
+-------------------------------------------------------------------------------
+local function HandleWhisper(msg, author)
+    if not IsEnabled() then return end
+    local safeword = GetConf("tool.farminvite.safeword", "inv")
+    if string.find(string.lower(msg), string.lower(safeword), 1, true) == nil then return end
+    local sender = author and author:match("^([^%-]+)") or author
+    if not sender or sender == "" then return end
+    local lowerSender = string.lower(sender)
+    local ignore = GetIgnoreList()
+    for _, n in ipairs(ignore) do
+        if n == lowerSender then return end
+    end
+    InviteUnit(sender)
+    Print("Invited " .. sender .. " (safeword match).")
+end
+
+-------------------------------------------------------------------------------
 -- PLAYER_LOGIN wiring
 -------------------------------------------------------------------------------
 local loaderFrame = CreateFrame("Frame", "PNNSFI_Loader", UIParent)
+-------------------------------------------------------------------------------
+-- Raid conversion poller
+-------------------------------------------------------------------------------
+local raidPollElapsed = 0
+local raidPollFrame = CreateFrame("Frame", "PNNSFI_RaidPoller", UIParent)
+raidPollFrame:SetScript("OnUpdate", function(self, elapsed)
+    raidPollElapsed = raidPollElapsed + elapsed
+    if raidPollElapsed < 1 then return end
+    raidPollElapsed = 0
+    if not IsEnabled() then return end
+    if GetConf("tool.farminvite.raid", "1") ~= "1" then return end
+    if GetNumPartyMembers() > 0 and GetNumRaidMembers() == 0 and UnitIsPartyLeader("player") then
+        ConvertToRaid()
+        self:SetScript("OnUpdate", nil)
+    end
+end)
+
 loaderFrame:RegisterEvent("PLAYER_LOGIN")
-loaderFrame:SetScript("OnEvent", function(self, event)
+loaderFrame:RegisterEvent("CHAT_MSG_WHISPER")
+loaderFrame:SetScript("OnEvent", function(self, event, ...)
+    if event == "CHAT_MSG_WHISPER" then
+        HandleWhisper(...)
+        return
+    end
     self:UnregisterEvent("PLAYER_LOGIN")
 
     local ok, err = pcall(BuildMinimapIcon)

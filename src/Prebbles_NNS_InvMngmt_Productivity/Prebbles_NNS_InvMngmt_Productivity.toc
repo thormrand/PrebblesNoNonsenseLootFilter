@@ -1,8 +1,0 @@
-## Interface: 30300
-## Title: Prebbles NNS Productivity
-## Notes: Tracker Dashboard for Prebbles_NNS_InvMngmt.
-## Author: Prebble
-## Version: 0.1b
-## RequiredDeps: Prebbles_NNS_InvMngmt
-
-tracker_dashboard.lua

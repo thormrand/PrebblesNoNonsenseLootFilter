@@ -64,6 +64,7 @@ PNNSIM_ConfigDefaults = {
     ["tool.farminvite.spam.channels"]                  = { default = "6,g",  type = "channels" },
     ["tool.farminvite.spam.testingonly"]               = { default = "0",    type = "bool"     },
     ["tool.farminvite.spam.message"]                   = { default = "auto", type = "freetext" },
+    ["tool.farminvite.raid"]                           = { default = "1",    type = "bool"     },
 
     -- Minimap refresh
     ["tool.minimaprefresh.frequency"]                = { default = "100",    type = "posint", min = 50  },
@@ -497,6 +498,7 @@ function PNNSIM_HandleSettingsInput(text)
             "tool.farminvite.autokick.ignoreplayerlist.add",
             "tool.farminvite.autokick.ignoreplayerlist.rem",
             "tool.farminvite.autokick.ignoreplayerlist.list",
+            "tool.farminvite.raid",
         }
         local ck = CmdHex()
         for _, cmd in ipairs(allCmds) do
