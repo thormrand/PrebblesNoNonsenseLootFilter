@@ -444,7 +444,8 @@ local function PNNSIM_RunSellQueue(state)
         processed = processed + 1
     end
 
-    C_Timer.After(0.1, function() PNNSIM_RunSellQueue(state) end)
+    local delay = batch / 80 -- Hard limit set to prevent server kick (server will kick at 100 actions per seconds).
+    C_Timer.After(math.max(0.1, delay), function() PNNSIM_RunSellQueue(state) end)
 end
 
 function PNNSIM_TriggerSell()
